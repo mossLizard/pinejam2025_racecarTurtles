@@ -91,9 +91,15 @@ function reckon()
   end
   if hasCrashed then return -1 end
   --  0: okay!
+  --  1: winner!
   -- -1: crashed (wall)
   -- -2: crashed 2 (for when I have proper collision checking)
   -- -3: no fuel
+  didInspect, inspectResult = turtle.inspectDown()
+  if didInspect and (inspectResult.name == "minecraft:black_wool" or inspectResult.name == "minecraft:white_wool") then
+    return 1
+  end
+  
   return 0
 end
 
