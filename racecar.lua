@@ -10,16 +10,16 @@ modem.open(modemFreq)
 testImage = {
   " Racecar!----------------------------- ",
   "                                       ",
-  " Modem  # # freq- [SYNC] ###  ######## ",
-  " Direc                 [NORTH]  [TURN] ",
+  " Modem  kHz freq- [SYNC] ###  ######## ",
+  " Direc            NORTH  [NEXT] [TURN] ",
   " Pos X  [<] [-] ###### [+] [>} # ----- ",
   " Pos Y  [<] [-] ###### [+] [>} # ----- ",
   " Pos Z  [<] [-] ###### [+] [>} # ----- ",
-  " Veloc  [-X] +## [+X]   [-Z] +## [+Z]  ",
+  " Veloc  [-] X+## [+] [@] [-] Z+## [+]  ",
   "                                       ",
   " pineJam2025                      moss "
 }
-
+local msgTestMode = true
 
 racerId = -1
 
@@ -27,8 +27,21 @@ serl = textutils.serializeJSON
 usrl = textutils.unserializeJSON
 
 local listenClass = ""
-local doListen = false -- waiting for computer to send message
+local doListen = false -- waiting for control computer to send message
 
+local messageQueue = {}
+function sendMessages()
+  for i,v in ipairs(messageQueue) do
+    modem.transmit(modemFreq,modemFreq,v)
+  end
+  messageQueue = {}
+end
+function enqueueMessage(message)
+  messageQueue[#messageQueue+1] = message
+end
+
+
+-- MOVEMENT
 
 local storedX, storedY, storedZ = 0,0,0
 local velx, velz = 0,0
@@ -36,22 +49,61 @@ local storedDirection = "north"
 -- east = +x, south = +z
 local movementQueue = {} -- move instructions for reckon() to execute
 
-function reckon()
+function reckon(order)
   -- moves (or doesn't) and updates stored X Y Z & direction
   -- I COULD use GPS to get position. That would be smart.
-  -- but I'm too tired to be smart right now
-  --   and that would involve somehow waiting for GPS while 
-  --   also listening to other computers. in the same program.
-  -- so. I'm doing this the Olde Fashioned Way
-  
+  --   but that would involve somehow waiting for GPS while 
+  --   also listening to other computers in a single program
+  --   and I'm too tired to be smart right now.
+  --   so. I'm doing this the Olde Fashioned Way
+  if (order == "f" then)
+    moveResult = turtle.forward()
+	
+  end
+  --  0: okay!
+  -- -1: crashed (wall)
+  -- -2: crashed 2 (for when I have proper collision checking)
+  -- -3: no fuel
+  return 0
 end
 
+function simTurnDirection(startingDir, turnDir)
+  -- l or r
+  -- fix later
+  turnOfset = 0
+  if turnDir == "r" then turnOfset = 2
+  elseif turnDir == "l" then turnOfset = -2
+  end
+  local directionMapping = {["south"]=1,["west"]=3,["north"]=5,["east"]=7}
+  local directionUnmapping = {"south",nil,"west",nil,"north",nil,"east"}
+  oldIndex = directionMapping[startingDir]
+  newIndex = math.mod(oldIndex+turnOfset+7,8)+1
+  return directionUnmapping[newIndex]
+end
+
+--print(turnDirection("north","r"),turnDirection("east","r"),turnDirection("south","l"))
+
+
 function addRotates(newDirection)
-  if newDirection == storedDirection then return 0 end
-  directionMapping = {["south"]=1,["west"]=3,["north"]=5,["east"]=7}
-  mapN = directionMapping[storedDirection]
-  mapS = directionMapping[newDirection]
-  
+  -- adds the necesary moves to turn to a specific direction to the movementQueue
+  -- returns number of moves added, list of moves added
+  if newDirection == storedDirection then return 0, {} end
+  local directionMapping = {["south"]=1,["west"]=3,["north"]=5,["east"]=7}
+  local mapS = directionMapping[storedDirection]
+  local mapN = directionMapping[newDirection]
+  local isReverse = (math.abs(mapN - mapS) == 4) -- programming is my passion
+  local toAdd = {}
+  if isReverse then -- turn around
+    toAdd = {"r","r"} -- not an ambiturner
+  elseif (mapN - mapS) == -2 or (mapN - mapS) == 6 then -- turn left
+    toAdd = {"l"}
+  else --if (mapN - mapS) == -2 or (mapN - mapS) == 6 then -- turn right
+    toAdd = {"r"}
+  end
+  for i,v in ipairs(toAdd) do -- this is a little overkill for this situation but shhhhhh
+    movementQueue[#movementQueue+1] = v
+  end
+  return #toAdd, toAdd
 end
 
 function lineToMoves(x,z)
@@ -59,27 +111,69 @@ function lineToMoves(x,z)
   -- returns > 0 if okay, -1 if crashed / blocked
   
   local newDirection = ""
-  local majorAxis, minorAxis = 0,0
+  local majorAxis, minorAxis = 0,0 -- distance to the target the longer and shorter axes
+  -- sign of minor axis indicates left (-) or right (+)
+  local minorOfset = 0 -- amount to move for each step along the major axis
+  -- I know this is terminology normally used for elipses but I can't remember the real names so uhhhhhhhhh
+   -- I don't have the energy to fix this random indent. SUFFER!!!!!
     if math.abs(z) > math.abs(x) then
 	  if z >= 0 then
 	    newDirection = "south"
-		majorAxis, minorAxis = z, x
+		majorAxis, minorAxis = z, -x
+		-- x ofset in - direction = right = + minorAxis
+		-- x ofset in + direction = left = - minorAxis
 	  else
 	    newDirection = "north"
-		majorAxis = -z, -x -- minus for left, + for right
+		majorAxis, minorAxis = -z, x 
+		-- x ofset in - direction = left = - minorAxis
+		-- x ofset in + direction = right = + minorAxis
 	  end
 	else
 	  if x >= 0 then
 	    newDirection = "east"
-		majorAxis, minorAxis = x, -z
+		majorAxis, minorAxis = x, z
 	  else
 	    newDirection = "west"
-		majorAxis, minorAxis = -x, z
+		majorAxis, minorAxis = -x, -z
 	  end
-	
 	end
-  
+	addRotates(newDirection)
+	minorOfset = math.abs(minorAxis / majorAxis)
+	local toAdd = {}
+	local acc = 0
+	local accStep = 0
+    local turnDirs = {"l","r"}
+	if minorAxis > 0 then
+	  turnDirs = {"r","l"}
+	end
+    for moveStep = 1, math.abs(majorAxis) do
+	  toAdd[#toAdd+1] = "f"
+	  acc = acc + minorOfset
+	  if math.floor(acc) > accStep then
+	    toAdd[#toAdd+1] = turnDirs[1]
+		toAdd[#toAdd+1] = "f"
+	    toAdd[#toAdd+1] = turnDirs[2]
+		accStep = math.floor(acc)
+	  end
+	end
+  for i,v in ipairs(toAdd) do
+    movementQueue[#movementQueue+1] = v
+  end
+  return #toAdd, toAdd
 end
+
+function bigOlMovementFunction()
+  -- pulls things off of movementQueue and tries to move in those directions
+  for i,v in ipairs(movementQueue) do
+    reckonResult = reckon(v)
+  end
+end
+
+
+
+
+
+
 
 function interval()
   sleep(0.1)
@@ -98,9 +192,17 @@ function wrangleInputs()
 	  if message.target == racerId  and message.class == listenClass then
 	    if message.class == "setId" then
 		  racerId = message.payload
-		  listenClass = ""
-		  doListen = false
+		  listenClass = "yourTurn"
+		  doListen = true
 		elseif message.class == "yourTurn" then
+		  if not msgTestMode then
+		  end
+		  listenClass = "startMove"
+		elseif message.class == "startMove" then
+		  enqueueMessage({ 
+		  ['class'] = "endMove",
+		  ['payload'] = {{velx + 1, velz - 1}}
+		  })
 		end
 	  end
     elseif event[1] == "mouse_click" then
@@ -119,10 +221,12 @@ end
 
 function startSync(event, param, index) -- send message requesting an ID
   -- will blindly accept the next setId message that comes in which is a bad way to do it but whateverrrrrr it's fiiiiine perfect is the enemy of done
+  -- actually you know what. no. intentional backdoor
+  -- feel free to use this information to hack this... super high priority protected turtle race.... I guess..?
   racerId = -1
   modem.transmit(modemFreq, modemFreq,
     {["class"] = "getId"}
-  ) 
+  )
   doListen = true
   listenClass = "setId"
 end
@@ -163,6 +267,7 @@ doLoop = true
 
 function main()
   while doLoop do
+    sendMessages()
     parallel.waitForAny(interval, getInputs)
 	wrangleInputs()
     drawPanel()
