@@ -44,8 +44,9 @@ players = {}
 -- --> yourTurn  do move turtle up      none
 -- --> cancel    go back down sorry     none
 -- --> startMove do move turtle line    accel vector
--- <-- endMove   do input enable        new velocity, crashed, issue
-
+-- <-- endMove   do input enable        new velocity, crashed
+print("starting...")
+sleep(1)
 local isAnyColor = false
 for k,v in pairs(monis) do
   thisMoni = peripheral.wrap(k)
@@ -62,7 +63,7 @@ if not isAnyColor then
   print(" WARNING: You have no advanced monitors defined!")
   print(" You will not be able to control the turtles!")
 end
-
+sleep(2)
 local helpScreen = false
 local helpPage = 1
 inputs = {}
@@ -93,13 +94,20 @@ local playerTurn = 0
 
 function advanceTurn(nextTurn)
   nextTurn = nextTurn or math.mod(playerTurn, #players)+1
-  enqueueMessage(
+  --print(nextTurn)
+  if players[nextTurn]['crashed'] then
+    players[nextTurn]['crashed'] = false
+	advanceTurn(math.mod(nextTurn, #players)+1)
+  else
+    enqueueMessage(
     {['target'] = players[nextTurn]['id'],
 	 ['class'] = 'yourTurn'})
-  playerTurn = nextTurn
-  canAcceptDirInput = true
-  listenType = "none"
-  doListen = false
+    playerTurn = nextTurn
+    canAcceptDirInput = true
+    listenType = "none"
+    doListen = false
+  end
+  
 end
 
 function startGame()
@@ -170,6 +178,12 @@ function scanButtons(event, buttons) -- I like this function even if it is a lit
   end
   return 0 --no button pressed
 end
+
+function skipToTurn(event,param,ibtn)
+  if canAcceptDirInput then advanceTurn(param) end
+  needRedraw = true
+end
+
 function scanCompassButtons(event)
   -- random indent to ruin youw day :3
    local compassButtons = {
@@ -189,7 +203,8 @@ function scanPlayerListButtons(event)
   sto[1] = scanButtons(event,staticButtons)
   for i,plyr in ipairs(players) do
    local playerButtons = {
-    {3,(i*2)+2,6,1,setPlayerName,i}
+    {3,(i*2)+2,10,1,setPlayerName,i},
+	{14,(i*2)+2,9,1,skipToTurn,i}
 	}
 		  -- function(event, param, ibtn)
 	sto[i+1] = scanButtons(event,playerButtons)
@@ -215,6 +230,7 @@ function nextListen(message) -- advances listening state if needed
 	  doListen = false
   elseif listenType == "endMove" then
     players[playerTurn]["velocity"] = payload[1]
+	players[playerTurn]['crashed'] = payload[2] == -1
 	needRedraw = true
 	needReprint = true
 	advanceTurn()
@@ -232,7 +248,7 @@ function wrangleInputs()
     if event[1] == "modem_message" then
 	  --message = usrl(event[5])
 	  message = event[5]
-	  print(serl(message))
+	  --print(serl(message))
 	  if message.class == "getId" then
 	    print("adding player")
 		needReprint = true
@@ -283,7 +299,7 @@ end
 function sendMessages()
   for i,v in ipairs(messageQueue) do -- needs to be on a separate tick I think
     modem.transmit(modemFreq,modemFreq,v)
-	print("  SENT:", serl(v))
+	--print("  SENT:", serl(v))
   end
   messageQueue = {}
 end
@@ -346,7 +362,7 @@ function generateCompassImage()
 	  sto[10] = "Mystery Status!!!"
 	end
 	sto[9] = string.format("%15.15s",players[playerTurn]["name"])
-	sto[8] = string.format(" %+3.3sN,    %+3.3sE ",players[playerTurn]["velocity"][1]*-1,players[playerTurn]["velocity"][2])
+	sto[8] = string.format(" %+3.3sN,    %+3.3sE ",players[playerTurn]["velocity"][2]*-1,players[playerTurn]["velocity"][1])
   return sto 
 end
 
@@ -403,13 +419,13 @@ function printPlayerList()
   term.setCursorPos(1,1)
   setColor(term,0,15)
   term.clear()
-  term.write(" PLAYERS:       [START]" )
+  term.write(" PLAYERS:    [START]" )
   for i,player in ipairs(players) do
     if i == playerTurn then setColor(term,15,0) else setColor(term,0,15) end
     term.setCursorPos(2,(i*2)+1)
 	term.write(string.format("%3.3s %+2.2dx %+2.2dy %5.5s, %s", player.id, player.velocity[1], player.velocity[2], player.crashed, player.name))
     term.setCursorPos(2,(i*2)+2)
-	term.write(" [NAME] [MY TURN] [DELETE]")
+	term.write(" [SET NAME] [MY TURN]")
 	
   end
   
