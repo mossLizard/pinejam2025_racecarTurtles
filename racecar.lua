@@ -1,4 +1,3 @@
--- INSTALL ON TURTLE!
 
 modemFreq = 201
 
@@ -11,11 +10,10 @@ modem.open(modemFreq)
 testImage = {
   " Racecar!----------------------------- ",
   "                                       ",
-  " Modem  kHz freq- [SYNC] ###  ######## ",
-  " Direc            NORTH  [NEXT] [TURN] ",
-  " Pos X  [<] [-] ###### [+] [>} # ----- ",
-  " Pos Y  [<] [-] ###### [+] [>} # ----- ",
-  " Pos Z  [<] [-] ###### [+] [>} # ----- ",
+  " Modem  ######  [SYNC] ### ########### ",
+  "                                       ",
+  " Posit      X##### Z#####   #####      ",
+  "                                       ",
   " Veloc  [-] X+## [+] [@] [-] Z+## [+]  ",
   "                                       ",
   " pineJam2025                      moss "
@@ -203,6 +201,13 @@ function bigOlMovementFunction()
   return reckonResult
 end
 
+function incVelX(event,param,ibtn)
+  velX = velX + param
+end
+
+function incVelZ(event,param,ibtn)
+  velZ = velZ + param
+end
 
 
 
@@ -250,7 +255,9 @@ function wrangleInputs()
 	  end
     elseif event[1] == "mouse_click" then
 	  buttons =  {
-	    {19,3,6,1,startSync,0}
+	    {17,3,6,1,startSync,0},
+	    {9,7,3,1,incVelX,-1},{18,7,3,1,incVelX,1},{22,7,3,1,bigOlMovementFunction,0},
+	    {26,7,3,1,incVelZ,-1},{35,7,3,1,incVelZ,1}
 	    }
 	  print(serl(event),scanButtons(event, buttons))
 	  --sleep(0.2)
@@ -280,7 +287,9 @@ function drawPanel()
     term.setCursorPos(1,i)
     term.write(testImage[i])
   end
-  drawList = { {13,3,5,modemFreq}, {26,3,3,racerId}, {31,3,8,listenClass}
+  drawList = { {9,3,6,modemFreq}, {24,3,3,racerId}, {28,3,11,listenClass},
+  {14,5,5,storedX}, {21,5,5,storedZ}, {28,5,6,storedDirection},
+  {14,7,3,velX}, {31,7,3,velZ}
   }
   term.setTextColor(2^15)
   term.setBackgroundColor(2^8)
