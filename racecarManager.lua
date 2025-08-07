@@ -33,7 +33,9 @@ players = {}
 -- color: wool color it started on
 -- crashed: true if crashed (skip turn and set false)
 -- name: silly names
-
+-- placement: win place
+-- moveCount
+lastPlace = 0
 
 
 -- DELIVER US:
@@ -44,7 +46,7 @@ players = {}
 -- --> yourTurn  do move turtle up      none
 -- --> cancel    go back down sorry     none
 -- --> startMove do move turtle line    accel vector
--- <-- endMove   do input enable        new velocity, crashed
+-- <-- endMove   do input enable        new velocity, crashed / won
 print("starting...")
 sleep(1)
 local isAnyColor = false
@@ -95,7 +97,12 @@ local playerTurn = 0
 function advanceTurn(nextTurn)
   nextTurn = nextTurn or math.mod(playerTurn, #players)+1
   --print(nextTurn)
-  if players[nextTurn]['crashed'] then
+  if players[nextTurn]['placement'] > 0 then
+    checkAllDone()
+	if doLoop then
+	  advanceTurn(math.mod(nextTurn, #players)+1)
+	end
+  elseif players[nextTurn]['crashed'] then
     players[nextTurn]['crashed'] = false
 	advanceTurn(math.mod(nextTurn, #players)+1)
   else
@@ -115,6 +122,45 @@ function startGame()
   needRedraw = true
   needReprint = true
   advanceTurn(1)
+end
+
+function checkAllDone()
+  if lastPlace >= #players then 
+    sleep(1)
+	setColor(term,0,15)
+	term.clear()
+	term.setCursorPos(1,1)
+	print(" Race complete! Well done. Here's how you all did:")
+	print()
+	ordinals = {"First","Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"}
+	sortedPlayers = {}
+    for i,v in ipairs(players) do
+      enqueueMessage(
+      {['target'] = v.id,
+	   ['class'] = 'endAll'})
+	  sortedPlayers[v.placement] = v
+	end
+	wrapmonis = {}
+	moniPlacementColor = {3, 4, 0, 1, 8, 7, 8, 7, 8, 7}
+	for monk,monv in pairs(monis) do
+	  moni = peripheral.wrap(monk)
+      moni.clear()
+	  wrapmonis[#wrapmonis+1] = moni
+	end
+	sleep(2)
+	for i,v in ipairs(sortedPlayers) do
+	  print(string.format("  %15.15s : %8.8s place (%3s moves)",v.name, ordinals[v.placement], v.moveCount))
+	  for monk, moni in ipairs(wrapmonis) do
+	    moni.setCursorPos(1,i)
+		setColor(moni,moniPlacementColor[i],15)
+		moni.write(v.name)
+	  end
+	  sleep(1)
+    end
+  needRedraw = false
+  needReprint = false
+  doLoop = false
+  end
 end
 
 
@@ -148,6 +194,7 @@ function handleCompassButton(event, pbtn, ibtn)
 	['target'] = players[playerTurn]["id"],
 	['payload'] = resultVector
 	})
+	players[playerTurn]['moveCount'] = players[playerTurn]['moveCount'] + 1
     needRedraw = true
     listenFor("endMove")
   end
@@ -230,7 +277,12 @@ function nextListen(message) -- advances listening state if needed
 	  doListen = false
   elseif listenType == "endMove" then
     players[playerTurn]["velocity"] = payload[1]
-	players[playerTurn]['crashed'] = payload[2] == -1
+	players[playerTurn]['crashed'] = (payload[2] == -1)
+	if payload[2] == 1 then
+	  players[playerTurn]['placement'] = lastPlace + 1
+	  lastPlace = lastPlace + 1
+	  checkAllDone()
+	end
 	needRedraw = true
 	needReprint = true
 	advanceTurn()
@@ -258,6 +310,8 @@ function wrangleInputs()
 		  ["id"] = #players + 1,
 		  ["velocity"] = {0,0},
 		  ["crashed"] = false,
+		  ["placement"] = 0,
+		  ["moveCount"] = 0,
 		  ["name"] = "Player ".. (#players+1)
 		}
 		enqueueMessage({
@@ -422,13 +476,13 @@ function printPlayerList()
   term.write(" PLAYERS:    [START]" )
   for i,player in ipairs(players) do
     if i == playerTurn then setColor(term,15,0) else setColor(term,0,15) end
+    if player.crashed then setColor(term,7,8) end
+    if player.placement > 0 then setColor(term,8,15) end
     term.setCursorPos(2,(i*2)+1)
-	term.write(string.format("%3.3s %+2.2dx %+2.2dy %5.5s, %s", player.id, player.velocity[1], player.velocity[2], player.crashed, player.name))
+	term.write(string.format("  %15.15s %3.3s %+2.2dx %+2.2dy", player.name, player.id, player.velocity[1], player.velocity[2]))
     term.setCursorPos(2,(i*2)+2)
-	term.write(" [SET NAME] [MY TURN]")
-	
+	term.write("   [SET NAME] [MY TURN] ")
   end
-  
 end
 
 
