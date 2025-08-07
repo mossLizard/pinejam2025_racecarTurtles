@@ -1,3 +1,4 @@
+-- INSTALL ON TURTLE!
 
 modemFreq = 201
 
@@ -44,22 +45,53 @@ end
 -- MOVEMENT
 
 local storedX, storedY, storedZ = 0,0,0
-local velx, velz = 0,0
+local velX, velZ = 0,0
 local storedDirection = "north"
 -- east = +x, south = +z
 local movementQueue = {} -- move instructions for reckon() to execute
 
-function reckon(order)
+function dirToVec(direction)
+  local mapping = { -- not copying my code from the other one for. reasons.
+    ['north'] = {0,-1},
+    ['east']  = {1, 0},
+    ['south'] = {0, 1},
+    ['west']  = {-1,0},
+  }
+  return mapping[direction]
+end
+
+function reckon()
   -- moves (or doesn't) and updates stored X Y Z & direction
   -- I COULD use GPS to get position. That would be smart.
   --   but that would involve somehow waiting for GPS while 
   --   also listening to other computers in a single program
   --   and I'm too tired to be smart right now.
   --   so. I'm doing this the Olde Fashioned Way
-  if (order == "f" then)
-    moveResult = turtle.forward()
-	
+  hasCrashed = false
+  for i,order in ipairs(movementQueue) do
+    --reckonResult = reckon(v)
+	--moveResult = {moveTypes[order]()}
+	if order == "f" then
+	  result = {turtle.forward()}
+	  hasCrashed = hasCrashed or (not result[1])
+	  if result[1] then 
+	    local ofset = dirToVec(storedDirection)
+		storedX = storedX + ofset[1]
+		storedZ = storedZ + ofset[1]
+	  end
+	elseif order == "l" then
+	  result = {turtle.turnLeft()}
+	  hasCrashed = hasCrashed or (not result[1]) -- shouldn't be able to fail but just for completeness
+	  storedDirection = simTurnDirection(storedDirection,"l")
+	elseif order == "r" then
+	  result = {turtle.turnRight()}
+	  hasCrashed = hasCrashed or (not result[1])
+	  storedDirection = simTurnDirection(storedDirection,"r")
+    end
+	if hasCrashed then break end
+	sleep(0.5)
   end
+  if hasCrashed then return -1 end
   --  0: okay!
   -- -1: crashed (wall)
   -- -2: crashed 2 (for when I have proper collision checking)
@@ -67,9 +99,7 @@ function reckon(order)
   return 0
 end
 
-function simTurnDirection(startingDir, turnDir)
-  -- l or r
-  -- fix later
+function simTurnDirection(startingDir, turnDir) -- I change my mind, THIS is my least favorite function in EITHER program
   turnOfset = 0
   if turnDir == "r" then turnOfset = 2
   elseif turnDir == "l" then turnOfset = -2
@@ -82,6 +112,8 @@ function simTurnDirection(startingDir, turnDir)
 end
 
 --print(turnDirection("north","r"),turnDirection("east","r"),turnDirection("south","l"))
+-- AND YET IT WORKS
+-- I hate it
 
 
 function addRotates(newDirection)
@@ -106,10 +138,7 @@ function addRotates(newDirection)
   return #toAdd, toAdd
 end
 
-function lineToMoves(x,z)
-  -- fills movementQueue with instructions to move by the set amount, checking down every once in a while
-  -- returns > 0 if okay, -1 if crashed / blocked
-  
+function addMoves(x,z)
   local newDirection = ""
   local majorAxis, minorAxis = 0,0 -- distance to the target the longer and shorter axes
   -- sign of minor axis indicates left (-) or right (+)
@@ -149,7 +178,7 @@ function lineToMoves(x,z)
     for moveStep = 1, math.abs(majorAxis) do
 	  toAdd[#toAdd+1] = "f"
 	  acc = acc + minorOfset
-	  if math.floor(acc) > accStep then
+	  if math.floor(acc) > accStep then -- for diagonal movement
 	    toAdd[#toAdd+1] = turnDirs[1]
 		toAdd[#toAdd+1] = "f"
 	    toAdd[#toAdd+1] = turnDirs[2]
@@ -163,10 +192,15 @@ function lineToMoves(x,z)
 end
 
 function bigOlMovementFunction()
-  -- pulls things off of movementQueue and tries to move in those directions
-  for i,v in ipairs(movementQueue) do
-    reckonResult = reckon(v)
+  addMoves(velX, velZ)
+  reckonResult = reckon()
+  movementQueue = {}
+  if reckonResult == -1 then
+    velX = 0
+	velZ = 0
   end
+  movementQueue = {}
+  return reckonResult
 end
 
 
@@ -199,10 +233,19 @@ function wrangleInputs()
 		  end
 		  listenClass = "startMove"
 		elseif message.class == "startMove" then
+		  accel = message.payload
+		  velX = velX + accel[1]
+		  velZ = velZ + accel[2]
+		  movementResult = bigOlMovementFunction()
 		  enqueueMessage({ 
 		  ['class'] = "endMove",
-		  ['payload'] = {{velx + 1, velz - 1}}
+		  ['payload'] = {{velX, velZ},movementResult}
 		  })
+		  if movementResult == -1 then
+		    movementQueue = {"r","r","r","r"}
+			reckon() -- spinout animation to indicate crashing
+			movementQueue = {}
+		  end
 		end
 	  end
     elseif event[1] == "mouse_click" then
@@ -213,9 +256,6 @@ function wrangleInputs()
 	  --sleep(0.2)
 	end
   end
-end
-
-function handleComputerMessage(message)
 end
 
 
